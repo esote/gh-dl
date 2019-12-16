@@ -14,53 +14,22 @@ Example execution on the users "esote", "git", and "torvalds" with a 1s
 timeout (meaning large repos are skipped).
 
 	$ gh-dl -t 1s esote git torvalds
-	using the working directory /tmp/gh-dl-042272538
-	found 6 repositories for torvalds
+	using the working directory /tmp/gh-dl-441140771
 	found 7 repositories for git
-	found 30 repositories for esote
-	fail: torvalds/libdc-for-dirk (clone timeout)
-	fail: torvalds/linux (clone timeout)
-	done: torvalds/pesconvert
-	done: esote/asmcat
-	fail: git/git (clone timeout)
-	done: git/git-reference
-	done: esote/balance
-	fail: torvalds/subsurface-for-dirk (clone timeout)
-	done: torvalds/test-tlb
-	fail: git/git-scm.com (clone timeout)
-	done: esote/bf2c
-	fail: git/git.github.io (clone timeout)
-	fail: torvalds/uemacs (clone timeout)
-	fail: esote/bonesbsd (clone timeout)
-	done: esote/booky
-	fail: git/gitscm-old (clone timeout)
-	done: esote/booky-r
-	done: esote/bsa
-	fail: git/htmldocs (clone timeout)
-	done: esote/c-classical-crypto
-	done: git/sha1collisiondetection
-	done: esote/chat
-	done: esote/classical-cryptography
-	done: esote/compsort
-	done: esote/coms327
-	done: esote/daemonize
-	done: esote/deadman
-	fail: esote/ct (clone timeout)
-	done: esote/diceroll
-	done: esote/fdoub
-	done: esote/fft
-	done: esote/filesrv
-	done: esote/fmtc
-	done: esote/fuzz
-	done: esote/gh-dl
-	done: esote/gitweb
-	done: esote/graceful
-	done: esote/http-proxy
-	done: esote/indent
-	done: esote/linux-next-scripts
-	done: esote/log-benchmark
-	done: esote/mathematical-constants
-	done: esote/mathematical-functions
-	downloaded 32 repositories
+	found 6 repositories for torvalds
+	found 57 repositories for esote
+	fail: esote/bonesbsd context deadline exceeded
+	fail: esote/ct context deadline exceeded
+	fail: git/git context deadline exceeded
+	fail: git/git-scm.com context deadline exceeded
+	fail: git/git.github.io context deadline exceeded
+	fail: git/gitscm-old context deadline exceeded
+	fail: git/htmldocs context deadline exceeded
+	fail: git/sha1collisiondetection context deadline exceeded
+	fail: torvalds/libdc-for-dirk context deadline exceeded
+	fail: torvalds/linux context deadline exceeded
+	fail: torvalds/subsurface-for-dirk context deadline exceeded
+	fail: esote/website context deadline exceeded
+	downloaded 58/70 repositories
 	archiving...
-	archive created: gh-dl-1576459568.tar.gz
+	archive created: gh-dl-1576529071.tar.gz

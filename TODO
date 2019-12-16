@@ -1,3 +1,4 @@
 TODO:
-	Utilize pagination when fetching the list of repositories, and fetch
-	larger pages.
+	Allow archiving individual repositories.
+
+	Use the Link header for pagination to avoid 1 additonal request.
