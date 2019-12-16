@@ -238,6 +238,12 @@ func archive(name string, level int) error {
 		return err
 	}
 
+	defer func() {
+		if err != nil {
+			_ = os.Remove(name)
+		}
+	}()
+
 	defer final.Close()
 
 	g, err := gzip.NewWriterLevel(final, level)
@@ -254,31 +260,35 @@ func archive(name string, level int) error {
 		return err
 	}
 
-	wd, err := os.Getwd()
-
-	if err != nil {
-		return err
-	}
-
-	if err := os.Chdir(base); err != nil {
-		return err
-	}
-
-	defer os.Chdir(wd)
-
 	for _, info := range files {
-		err = filepath.Walk(info.Name(), func(file string, i os.FileInfo, err error) error {
+		cloned, err := ioutil.ReadDir(filepath.Join(base, info.Name()))
+
+		if err != nil {
+			return err
+		}
+
+		if len(cloned) == 0 {
+			continue
+		}
+
+		err = filepath.Walk(filepath.Join(base, info.Name()), func(file string, i os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 
-			hdr, err := tar.FileInfoHeader(i, file)
+			rel, err := filepath.Rel(base, file)
 
 			if err != nil {
 				return err
 			}
 
-			hdr.Name = filepath.ToSlash(file)
+			hdr, err := tar.FileInfoHeader(i, rel)
+
+			if err != nil {
+				return err
+			}
+
+			hdr.Name = filepath.ToSlash(rel)
 
 			if err := t.WriteHeader(hdr); err != nil {
 				return err
