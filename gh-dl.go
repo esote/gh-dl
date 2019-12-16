@@ -102,6 +102,7 @@ func main() {
 
 		for _, user := range flag.Args() {
 			go query(user, repos, &dlWg, &queryWg)
+			time.Sleep(250 * time.Millisecond)
 		}
 
 		queryWg.Wait()
@@ -113,7 +114,7 @@ func main() {
 	go func() {
 		for r := range repos {
 			go dl(r, *timeout, &dlWg, &successful)
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 		}
 	}()
 
@@ -127,14 +128,13 @@ func main() {
 		fmt.Printf("downloaded %d repositories\n", successful)
 	}
 
-	_, _ = fmt.Println("archiving...")
+	fmt.Println("archiving...")
 
 	if err = archive(name, *level); err != nil {
 		goto done
 	}
 
 	fmt.Println("archive created:", name)
-
 done:
 	if err2 := os.RemoveAll(base); err2 != nil {
 		if err == nil {
@@ -188,7 +188,7 @@ func query(user string, repos chan<- repo, dlWg, queryWg *sync.WaitGroup) {
 	}
 
 	mu.Lock()
-	_, _ = fmt.Printf("found %d repositories for %s\n", len(st), user)
+	fmt.Printf("found %d repositories for %s\n", len(st), user)
 	mu.Unlock()
 
 	dlWg.Add(len(st))
@@ -234,6 +234,7 @@ func dl(r repo, timeout time.Duration, dlWg *sync.WaitGroup, successful *int) {
 
 func archive(name string, level int) error {
 	final, err := os.Create(name)
+
 	if err != nil {
 		return err
 	}
@@ -261,57 +262,63 @@ func archive(name string, level int) error {
 	}
 
 	for _, info := range files {
-		cloned, err := ioutil.ReadDir(filepath.Join(base, info.Name()))
-
-		if err != nil {
-			return err
-		}
-
-		if len(cloned) == 0 {
-			continue
-		}
-
-		err = filepath.Walk(filepath.Join(base, info.Name()), func(file string, i os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			rel, err := filepath.Rel(base, file)
-
-			if err != nil {
-				return err
-			}
-
-			hdr, err := tar.FileInfoHeader(i, rel)
-
-			if err != nil {
-				return err
-			}
-
-			hdr.Name = filepath.ToSlash(rel)
-
-			if err := t.WriteHeader(hdr); err != nil {
-				return err
-			}
-
-			if !i.IsDir() {
-				f, err := os.Open(file)
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-				if _, err := io.Copy(t, f); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		})
-
-		if err != nil {
+		if err = insert(t, info); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func insert(t *tar.Writer, info os.FileInfo) error {
+	full := filepath.Join(base, info.Name())
+	cloned, err := ioutil.ReadDir(full)
+
+	if err != nil {
+		return err
+	}
+
+	if len(cloned) == 0 {
+		return nil
+	}
+
+	return filepath.Walk(full, func(path string, i os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(base, path)
+
+		if err != nil {
+			return err
+		}
+
+		hdr, err := tar.FileInfoHeader(i, rel)
+
+		if err != nil {
+			return err
+		}
+
+		hdr.Name = filepath.ToSlash(rel)
+
+		if err := t.WriteHeader(hdr); err != nil {
+			return err
+		}
+
+		if i.Mode().IsRegular() {
+			f, err := os.Open(path)
+
+			if err != nil {
+				return err
+			}
+
+			defer f.Close()
+
+			if _, err := io.Copy(t, f); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
