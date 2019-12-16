@@ -1,10 +1,12 @@
 gh-dl is a client to download all public GitHub repositories from users and/or
 organizations to create a compressed archive of the result.
 
-./gh-gl [-f] [-l level] [-t duration] user...
+./gh-gl [-s] [-l level] [-t duration] user...
 
-The -l option specifies the gzip compression level 0 <= l <= 9. Default is
-usually okay. The -t option specifies the timeout when cloning the git repo.
+The -l option specifies the gzip compression level -2 <= l <= 9. -2 for Huffman
+coding, -1 for a reasonable default level, otherwise 0 (none) <= l <= 9 (best).
+The -t option specifies the timeout when cloning the git repo. The -s option
+specifies to recursively clone submodules (with 16 parallel jobs).
 
 If the downloads are interrupted, it will leave a folder in the /tmp directory.
 

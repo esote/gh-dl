@@ -43,16 +43,22 @@ type repo struct {
 	user string
 }
 
-var base string
+var (
+	base string
+	mu   sync.Mutex
 
-var mu sync.Mutex
+	level      *int
+	timeout    *time.Duration
+	submodules *bool
+)
 
 func usage() {
 	fmt.Println(`Usage of gh-dl:
   -l int
-        zip compression level (-1 = default, 0 = none, 9 = best)
+        gzip compression level
+  -s	recursively fetch submodules
   -t duration
-        git clone timeout duration, or 0 for none (default 10m0s)`)
+        git clone timeout duration, "0s" for none (default 10m0s)`)
 }
 
 func main() {
@@ -61,20 +67,16 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("fail: ")
 
-	level := flag.Int("l", gzip.DefaultCompression,
-		"gzip compression level, default = 1, 0 (none) <= level <= 9 (best)")
-	timeout := flag.Duration("t", 10*time.Minute,
-		"git clone timeout duration, none = 0")
+	level = flag.Int("l", gzip.DefaultCompression, "gzip compression level")
+	timeout = flag.Duration("t", 10*time.Minute,
+		`git clone timeout duration, "0s" for none`)
+	submodules = flag.Bool("s", false, "recursively fetch submodules")
 
 	flag.Usage = usage
 	flag.Parse()
 
 	if flag.NArg() < 1 {
 		log.Fatal("no username specified")
-	}
-
-	if *level != gzip.DefaultCompression && (*level < gzip.NoCompression || *level > gzip.BestCompression) {
-		log.Fatal("gzip compression level invalid")
 	}
 
 	var err error
@@ -113,7 +115,7 @@ func main() {
 
 	go func() {
 		for r := range repos {
-			go dl(r, *timeout, &dlWg, &successful)
+			go dl(r, &dlWg, &successful)
 			time.Sleep(250 * time.Millisecond)
 		}
 	}()
@@ -130,7 +132,7 @@ func main() {
 
 	fmt.Println("archiving...")
 
-	if err = archive(name, *level); err != nil {
+	if err = archive(name); err != nil {
 		goto done
 	}
 
@@ -202,19 +204,27 @@ func query(user string, repos chan<- repo, dlWg, queryWg *sync.WaitGroup) {
 	}
 }
 
-func dl(r repo, timeout time.Duration, dlWg *sync.WaitGroup, successful *int) {
+func dl(r repo, dlWg *sync.WaitGroup, successful *int) {
 	defer dlWg.Done()
 
 	ctx := context.Background()
 
-	if timeout != 0 {
+	if *timeout != 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		ctx, cancel = context.WithTimeout(ctx, *timeout)
 		defer cancel()
 	}
 
-	dir := filepath.Join(base, r.user)
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "clone", "-q", r.git)
+	args := []string{"-C", filepath.Join(base, r.user), "clone", "-q",
+		"--no-hardlinks"}
+
+	if *submodules {
+		args = append(args, "--recurse-submodules", "-j", "16")
+	}
+
+	args = append(args, r.git)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
 
 	if _, err := cmd.Output(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -232,7 +242,7 @@ func dl(r repo, timeout time.Duration, dlWg *sync.WaitGroup, successful *int) {
 	mu.Unlock()
 }
 
-func archive(name string, level int) error {
+func archive(name string) error {
 	final, err := os.Create(name)
 
 	if err != nil {
@@ -247,9 +257,11 @@ func archive(name string, level int) error {
 
 	defer final.Close()
 
-	g, err := gzip.NewWriterLevel(final, level)
-	if err != nil {
-		return err
+	var g *gzip.Writer
+
+	if g, err = gzip.NewWriterLevel(final, *level); err != nil {
+		log.Println("gzip level invalid, using default")
+		g = gzip.NewWriter(final)
 	}
 	defer g.Close()
 
