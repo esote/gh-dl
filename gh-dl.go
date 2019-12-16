@@ -23,6 +23,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -42,7 +43,7 @@ type repo struct {
 	user string
 }
 
-const base = ".gh-dl-working"
+var base string
 
 var mu sync.Mutex
 
@@ -51,18 +52,19 @@ func usage() {
   -l int
         zip compression level (-1 = default, 0 = none, 9 = best)
   -t duration
-        git clone timeout duration, or 0 for none (default 10m0s)
-  -f bool
-        delete remnants of previous interrupted executions (default false)`)
+        git clone timeout duration, or 0 for none (default 10m0s)`)
 }
 
 func main() {
+	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
+
+	log.SetFlags(0)
+	log.SetPrefix("fail: ")
+
 	level := flag.Int("l", gzip.DefaultCompression,
 		"gzip compression level, default = 1, 0 (none) <= level <= 9 (best)")
 	timeout := flag.Duration("t", 10*time.Minute,
 		"git clone timeout duration, none = 0")
-	force := flag.Bool("f", false,
-		"delete remnants of previous interrupted executions")
 
 	flag.Usage = usage
 	flag.Parse()
@@ -75,67 +77,79 @@ func main() {
 		log.Fatal("gzip compression level invalid")
 	}
 
-	if *force {
-		if err := os.RemoveAll(base); err != nil {
-			log.Fatal(err)
-		}
-	}
+	var err error
 
-	if err := os.Mkdir(base, 0700); err != nil {
-		if os.IsExist(err) {
-			log.Fatal("previous downloads were interrupted, rerun with -f to bypass this")
-		}
+	base, err = ioutil.TempDir("", "gh-dl-")
+
+	if err != nil {
 		log.Fatal(err)
 	}
 
+	fmt.Println("using the working directory", base)
+
 	repos := make(chan repo)
-	var wg sync.WaitGroup
-	wg.Add(1)
+
+	var dlWg sync.WaitGroup
+
+	// Begin with 1 so that the concurrent downloads must wait for the
+	// repository querying to finish.
+	dlWg.Add(1)
 
 	go func() {
-		var wg2 sync.WaitGroup
-		wg2.Add(flag.NArg())
+		var queryWg sync.WaitGroup
+
+		queryWg.Add(flag.NArg())
+
 		for _, user := range flag.Args() {
-			go query(user, repos, &wg, &wg2)
+			go query(user, repos, &dlWg, &queryWg)
 		}
-		wg2.Wait()
-		wg.Add(-1)
+
+		queryWg.Wait()
+		dlWg.Done()
 	}()
 
 	successful := 0
 
 	go func() {
 		for r := range repos {
-			go dl(r, *timeout, &wg, &successful)
+			go dl(r, *timeout, &dlWg, &successful)
 			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 
-	wg.Wait()
+	dlWg.Wait()
 	close(repos)
 
 	if successful == 0 {
-		log.Fatal("no repositories downloaded")
+		err = errors.New("no repositories downloaded")
+		goto done
 	} else {
-		fmt.Printf("Downloaded %d repositories\n", successful)
+		fmt.Printf("downloaded %d repositories\n", successful)
 	}
 
-	_, _ = fmt.Println("Archiving...")
-	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
+	_, _ = fmt.Println("archiving...")
 
-	if err := archive(name, *level); err != nil {
-		log.Fatal(err)
+	if err = archive(name, *level); err != nil {
+		goto done
 	}
 
-	fmt.Println("Archive created:", name)
+	fmt.Println("archive created:", name)
 
-	if err := os.RemoveAll(base); err != nil {
-		log.Fatal(err)
+done:
+	if err2 := os.RemoveAll(base); err2 != nil {
+		if err == nil {
+			err = err2
+		}
+	}
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
 	}
 }
 
-func query(user string, repos chan<- repo, wg, wg2 *sync.WaitGroup) {
-	defer wg2.Done()
+func query(user string, repos chan<- repo, dlWg, queryWg *sync.WaitGroup) {
+	defer queryWg.Done()
 
 	if err := os.Mkdir(filepath.Join(base, user), 0700); err != nil {
 		log.Println(err)
@@ -174,10 +188,10 @@ func query(user string, repos chan<- repo, wg, wg2 *sync.WaitGroup) {
 	}
 
 	mu.Lock()
-	_, _ = fmt.Printf("Found %d repositories for %s\n", len(st), user)
+	_, _ = fmt.Printf("found %d repositories for %s\n", len(st), user)
 	mu.Unlock()
 
-	wg.Add(len(st))
+	dlWg.Add(len(st))
 
 	for _, r := range st {
 		repos <- repo{
@@ -188,8 +202,8 @@ func query(user string, repos chan<- repo, wg, wg2 *sync.WaitGroup) {
 	}
 }
 
-func dl(r repo, timeout time.Duration, wg *sync.WaitGroup, successful *int) {
-	defer wg.Done()
+func dl(r repo, timeout time.Duration, dlWg *sync.WaitGroup, successful *int) {
+	defer dlWg.Done()
 
 	ctx := context.Background()
 
@@ -204,16 +218,16 @@ func dl(r repo, timeout time.Duration, wg *sync.WaitGroup, successful *int) {
 
 	if _, err := cmd.Output(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Println("Failed:", r.name, "(timeout)")
+			log.Println(r.name, "(clone timeout)")
 		} else {
-			log.Println("Failed:", r.name, err)
+			log.Println(r.name, err)
 		}
 		_ = os.RemoveAll(filepath.Join(base, r.name))
 		return
 	}
 
 	mu.Lock()
-	fmt.Println("Done:", r.name)
+	fmt.Println("done:", r.name)
 	(*successful)++
 	mu.Unlock()
 }

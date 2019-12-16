@@ -6,60 +6,59 @@ organizations to create a compressed archive of the result.
 The -l option specifies the gzip compression level 0 <= l <= 9. Default is
 usually okay. The -t option specifies the timeout when cloning the git repo.
 
-If the downloads are interrupted, it will leave a folder ".gl-dl-working".
-Rerunning will halt if this folder already exists. Use -f to bypass this
-requirement and have gh-dl remove the old downloads itself.
+If the downloads are interrupted, it will leave a folder in the /tmp directory.
 
 Example execution on the users "esote", "git", and "torvalds" with a 1s
 timeout (meaning large repos are skipped).
 
-	$ gh-dl -t 10s esote git torvalds
-	Found 7 repositories for git
-	Found 6 repositories for torvalds
-	Found 30 repositories for esote
-	Done: esote/asmcat
-	2019/12/15 16:38:26 Failed: git/git (timeout)
-	2019/12/15 16:38:26 Failed: git/git-reference (timeout)
-	2019/12/15 16:38:27 Failed: torvalds/libdc-for-dirk (timeout)
-	2019/12/15 16:38:27 Failed: git/git-scm.com (timeout)
-	Done: esote/balance
-	2019/12/15 16:38:27 Failed: torvalds/linux (timeout)
-	Done: torvalds/pesconvert
-	Done: esote/bf2c
-	2019/12/15 16:38:28 Failed: git/git.github.io (timeout)
-	2019/12/15 16:38:28 Failed: git/gitscm-old (timeout)
-	2019/12/15 16:38:28 Failed: torvalds/subsurface-for-dirk (timeout)
-	Done: torvalds/test-tlb
-	2019/12/15 16:38:29 Failed: esote/bonesbsd (timeout)
-	Done: esote/booky
-	2019/12/15 16:38:29 Failed: git/htmldocs (timeout)
-	Done: esote/booky-r
-	2019/12/15 16:38:29 Failed: git/sha1collisiondetection (timeout)
-	Done: esote/bsa
-	2019/12/15 16:38:30 Failed: torvalds/uemacs (timeout)
-	Done: esote/c-classical-crypto
-	Done: esote/chat
-	Done: esote/classical-cryptography
-	Done: esote/compsort
-	Done: esote/coms327
-	Done: esote/daemonize
-	2019/12/15 16:38:31 Failed: esote/ct (timeout)
-	Done: esote/deadman
-	Done: esote/diceroll
-	Done: esote/fdoub
-	Done: esote/fft
-	Done: esote/filesrv
-	Done: esote/fmtc
-	Done: esote/fuzz
-	Done: esote/gitweb
-	Done: esote/graceful
-	Done: esote/http-proxy
-	Done: esote/indent
-	Done: esote/linux-next-scripts
-	Done: esote/log-benchmark
-	Done: esote/mathematical-constants
-	Done: esote/mathematical-functions
-	Done: esote/matrix2d
-	Downloaded 30 repositories
-	Archiving...
-	Archive created: gh-dl-1576449514.tar.gz
+	$ gh-dl -t 1s esote git torvalds
+	using the working directory /tmp/gh-dl-042272538
+	found 6 repositories for torvalds
+	found 7 repositories for git
+	found 30 repositories for esote
+	fail: torvalds/libdc-for-dirk (clone timeout)
+	fail: torvalds/linux (clone timeout)
+	done: torvalds/pesconvert
+	done: esote/asmcat
+	fail: git/git (clone timeout)
+	done: git/git-reference
+	done: esote/balance
+	fail: torvalds/subsurface-for-dirk (clone timeout)
+	done: torvalds/test-tlb
+	fail: git/git-scm.com (clone timeout)
+	done: esote/bf2c
+	fail: git/git.github.io (clone timeout)
+	fail: torvalds/uemacs (clone timeout)
+	fail: esote/bonesbsd (clone timeout)
+	done: esote/booky
+	fail: git/gitscm-old (clone timeout)
+	done: esote/booky-r
+	done: esote/bsa
+	fail: git/htmldocs (clone timeout)
+	done: esote/c-classical-crypto
+	done: git/sha1collisiondetection
+	done: esote/chat
+	done: esote/classical-cryptography
+	done: esote/compsort
+	done: esote/coms327
+	done: esote/daemonize
+	done: esote/deadman
+	fail: esote/ct (clone timeout)
+	done: esote/diceroll
+	done: esote/fdoub
+	done: esote/fft
+	done: esote/filesrv
+	done: esote/fmtc
+	done: esote/fuzz
+	done: esote/gh-dl
+	done: esote/gitweb
+	done: esote/graceful
+	done: esote/http-proxy
+	done: esote/indent
+	done: esote/linux-next-scripts
+	done: esote/log-benchmark
+	done: esote/mathematical-constants
+	done: esote/mathematical-functions
+	downloaded 32 repositories
+	archiving...
+	archive created: gh-dl-1576459568.tar.gz
