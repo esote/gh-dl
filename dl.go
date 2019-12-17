@@ -28,16 +28,16 @@ func fanDls(repos <-chan repo, wg *sync.WaitGroup, successful *uint64) {
 func dl(r repo) error {
 	ctx := context.Background()
 
-	if *timeout != 0 {
+	if timeout != 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 
 	args := []string{"-C", filepath.Join(base, r.user), "clone", "-q",
 		"--no-hardlinks"}
 
-	if *submodules {
+	if submodules {
 		args = append(args, "--recurse-submodules", "-j", "16")
 	}
 

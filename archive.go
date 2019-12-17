@@ -27,7 +27,7 @@ func archive(name string) error {
 
 	var g *gzip.Writer
 
-	if g, err = gzip.NewWriterLevel(final, *level); err != nil {
+	if g, err = gzip.NewWriterLevel(final, level); err != nil {
 		log.Println("gzip level invalid, using default")
 		g = gzip.NewWriter(final)
 	}

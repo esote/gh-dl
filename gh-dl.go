@@ -41,9 +41,9 @@ const sleep = 250 * time.Millisecond
 var (
 	base string
 
-	level      *int
-	timeout    *time.Duration
-	submodules *bool
+	level      int
+	timeout    time.Duration
+	submodules bool
 )
 
 func usage() {
@@ -59,12 +59,13 @@ func main() {
 	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
 
 	log.SetFlags(0)
-	log.SetPrefix("fail: ")
+	log.SetPrefix("error: ")
 
-	level = flag.Int("l", gzip.DefaultCompression, "gzip compression level")
-	timeout = flag.Duration("t", 10*time.Minute,
+	flag.IntVar(&level, "l", gzip.DefaultCompression,
+		"gzip compression level")
+	flag.DurationVar(&timeout, "t", 10*time.Minute,
 		`git clone timeout duration, "0s" for none`)
-	submodules = flag.Bool("s", false, "recursively fetch submodules")
+	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
 
 	flag.Usage = usage
 	flag.Parse()
