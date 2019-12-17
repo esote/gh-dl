@@ -74,7 +74,6 @@ func main() {
 	}
 
 	var err error
-
 	base, err = ioutil.TempDir("", "gh-dl-")
 
 	if err != nil {
@@ -94,7 +93,7 @@ func main() {
 	var successful uint64
 
 	go fanQueries(repos, &wg, &total, flag.Args())
-	go fanDl(repos, &wg, &successful)
+	go fanDls(repos, &wg, &successful)
 
 	wg.Wait()
 	close(repos)
@@ -114,10 +113,8 @@ func main() {
 
 	fmt.Println("archive created:", name)
 done:
-	if err2 := os.RemoveAll(base); err2 != nil {
-		if err == nil {
-			err = err2
-		}
+	if err2 := os.RemoveAll(base); err2 != nil && err == nil {
+		err = err2
 	}
 
 	if err != nil {

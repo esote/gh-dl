@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func fanDl(repos <-chan repo, wg *sync.WaitGroup, successful *uint64) {
+func fanDls(repos <-chan repo, wg *sync.WaitGroup, successful *uint64) {
 	for r := range repos {
 		go func(r repo) {
 			defer wg.Done()

@@ -1,4 +1,2 @@
 TODO:
 	Allow archiving individual repositories.
-
-	Use the Link header for pagination to avoid 1 additonal request.

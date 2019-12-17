@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,6 +19,11 @@ import (
 type found struct {
 	found uint64
 	name  string
+}
+
+type user []struct {
+	Name   string `json:"full_name"`
+	GitURL string `json:"git_url"`
 }
 
 func fanQueries(repos chan<- repo, dlWg *sync.WaitGroup, total *uint64, args []string) {
@@ -47,7 +53,7 @@ func fanQueries(repos chan<- repo, dlWg *sync.WaitGroup, total *uint64, args []s
 	dlWg.Done()
 }
 
-func query(name string, repos chan<- repo, dlWg *sync.WaitGroup) (uint64, error) {
+func query(name string, repos chan<- repo, wg *sync.WaitGroup) (uint64, error) {
 	if err := os.Mkdir(filepath.Join(base, name), 0700); err != nil {
 		return 0, err
 	}
@@ -65,47 +71,25 @@ func query(name string, repos chan<- repo, dlWg *sync.WaitGroup) (uint64, error)
 
 	var count int
 
-	for page := uint64(1); ; page++ {
-		v.Set("page", strconv.FormatUint(page, 10))
+	for page, pages := 1, 1; page <= pages; page++ {
+		v.Set("page", strconv.Itoa(page))
 		api.RawQuery = v.Encode()
 
-		resp, err := http.Get(api.String())
+		var users user
+		users, pages, err = getRepos(api.String(), pages)
 
 		if err != nil {
 			return 0, err
 		}
 
-		if err = checkRateLimit(resp); err != nil {
-			return 0, err
-		}
-
-		data, err := ioutil.ReadAll(resp.Body)
-
-		if err != nil {
-			return 0, err
-		}
-
-		if err = resp.Body.Close(); err != nil {
-			return 0, err
-		}
-
-		var st []struct {
-			Name   string `json:"full_name"`
-			GitURL string `json:"git_url"`
-		}
-
-		if err := json.Unmarshal(data, &st); err != nil {
-			return 0, err
-		}
-
-		if len(st) == 0 {
+		if len(users) == 0 {
 			break
 		}
 
-		dlWg.Add(len(st))
-		count += len(st)
+		count += len(users)
 
-		for _, r := range st {
+		wg.Add(len(users))
+		for _, r := range users {
 			repos <- repo{
 				git:  r.GitURL,
 				name: r.Name,
@@ -119,6 +103,34 @@ func query(name string, repos chan<- repo, dlWg *sync.WaitGroup) (uint64, error)
 	return uint64(count), nil
 }
 
+func getRepos(url string, pages int) (u user, count int, err error) {
+	resp, err := http.Get(url)
+
+	if err != nil {
+		return
+	}
+
+	if err = checkRateLimit(resp.Header); err != nil {
+		return
+	}
+
+	var ok bool
+	if count, ok = pageCount(resp.Header.Get("Link")); !ok {
+		count = pages
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		return
+	}
+
+	defer resp.Body.Close()
+
+	err = json.Unmarshal(body, &u)
+	return
+}
+
 func printFound(found <-chan found, total *uint64) {
 	for f := range found {
 		fmt.Printf("found %d repositories for %s\n", f.found, f.name)
@@ -126,12 +138,12 @@ func printFound(found <-chan found, total *uint64) {
 	}
 }
 
-func checkRateLimit(resp *http.Response) error {
-	if resp.Header.Get("X-RateLimit-Remaining") != "0" {
+func checkRateLimit(hdrs http.Header) error {
+	if hdrs.Get("X-RateLimit-Remaining") != "0" {
 		return nil
 	}
 
-	reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Remaining"), 10, 64)
+	reset, err := strconv.ParseInt(hdrs.Get("X-RateLimit-Remaining"), 10, 64)
 
 	if err != nil {
 		return errors.New("rate limit exceeded")
@@ -139,4 +151,32 @@ func checkRateLimit(resp *http.Response) error {
 
 	return fmt.Errorf("rate limit exceeded, will reset %s",
 		time.Unix(reset, 0).String())
+}
+
+func pageCount(str string) (int, bool) {
+	links := strings.Split(str, ", ")
+
+	if len(links) == 0 {
+		return 0, false
+	}
+
+	// "last" link is usually at the end so traverse in reverse
+	for i := len(links) - 1; i > 0; i-- {
+		parts := strings.Split(links[i], "; ")
+
+		if len(parts) != 2 || parts[1] != `rel="last"` || len(parts[0]) < 3 {
+			continue
+		}
+
+		link, err := url.Parse(parts[0][1 : len(parts[0])-2])
+
+		if err != nil {
+			return 0, false
+		}
+
+		n, err := strconv.Atoi(link.Query().Get("page"))
+		return n, err == nil
+	}
+
+	return 0, false
 }
