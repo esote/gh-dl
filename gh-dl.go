@@ -20,7 +20,6 @@ package main
 
 import (
 	"compress/gzip"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -30,37 +29,55 @@ import (
 	"time"
 )
 
-type repo struct {
-	git  string
-	name string
-	user string
-}
-
-const sleep = 250 * time.Millisecond
-
-var (
-	base string
-
-	level      int
-	timeout    time.Duration
-	submodules bool
+const (
+	sleep = 250 * time.Millisecond
 )
 
+var (
+	// Base working directory.
+	base string
+
+	// Flags
+	level      int
+	quiet      bool
+	submodules bool
+	timeout    time.Duration
+	verbose    bool
+
+	// Stat counters
+	successful uint64
+	total      uint64
+)
+
+type msg struct {
+	s string
+	v bool
+}
+
+var msgs chan msg
+var errs chan error
+
 func main() {
-	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
+	start := time.Now()
 
 	log.SetFlags(0)
 	log.SetPrefix("error: ")
 
 	flag.IntVar(&level, "l", gzip.DefaultCompression,
 		"gzip compression level")
+	flag.BoolVar(&quiet, "q", false, "quiet except for fatal errors")
+	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
 	flag.DurationVar(&timeout, "t", 10*time.Minute,
 		`git clone timeout duration, "0s" for none`)
-	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
+	flag.BoolVar(&verbose, "v", false, "print more details")
 
 	flag.Parse()
 
-	if flag.NArg() < 1 {
+	if quiet && verbose {
+		log.Fatal("quiet and verbose flags are mutually exclusive")
+	}
+
+	if flag.NArg() == 0 {
 		log.Fatal("no names specified")
 	}
 
@@ -71,43 +88,64 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("using the working directory", base)
-
-	repos := make(chan repo, 100)
-
-	// Begin with 1 so that the concurrent downloads must wait for the
-	// repository querying to finish.
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	var total uint64
-	var successful uint64
-
-	go fanQueries(repos, &wg, &total, flag.Args())
-	go fanDls(repos, &wg, &successful)
-
-	wg.Wait()
-	close(repos)
-
-	if successful == 0 {
-		err = errors.New("no repositories downloaded")
-		goto done
+	if verbose {
+		fmt.Println("working directory", base)
 	}
 
-	fmt.Printf("downloaded %d/%d repositories\n", successful, total)
-	fmt.Println("archiving...")
+	errs = make(chan error)
+	go func(errs <-chan error) {
+		for err := range errs {
+			if !quiet {
+				log.Println(err)
+			}
+		}
+	}(errs)
 
-	if err = archive(name); err == nil {
+	msgs = make(chan msg)
+	go func(msgs <-chan msg) {
+		for m := range msgs {
+			if !quiet && (!m.v || (m.v && verbose)) {
+				fmt.Println(m.s)
+			}
+		}
+	}(msgs)
+
+	queries := make(chan query, flag.NArg())
+	dls := make(chan dl, 100)
+
+	var wg sync.WaitGroup
+	wg.Add(flag.NArg())
+
+	go consumeQueries(queries, dls, &wg)
+	go fanQueries(flag.Args(), queries, &wg)
+	go consumeDls(dls, &wg)
+
+	wg.Wait()
+	close(queries)
+	close(dls)
+	close(errs)
+	close(msgs)
+
+	if !quiet {
+		fmt.Printf("downloaded %d/%d repositories\n", successful, total)
+	}
+
+	if verbose {
+		fmt.Println("archiving...")
+	}
+
+	name := fmt.Sprintf("gh-dl-%d.tar.gz", start.UTC().Unix())
+
+	if err = archive(name); err == nil && !quiet {
 		fmt.Println("archive created:", name)
 	}
 
-done:
 	if err2 := os.RemoveAll(base); err2 != nil && err == nil {
 		err = err2
 	}
 
 	if err != nil {
-		log.Println(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
+
 }

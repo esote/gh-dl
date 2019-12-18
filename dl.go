@@ -1,8 +1,27 @@
+/*
+ * gh-dl is a GitHub archiving client.
+ * Copyright (C) 2019 Esote
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,21 +30,21 @@ import (
 	"time"
 )
 
-func fanDls(repos <-chan repo, wg *sync.WaitGroup, successful *uint64) {
-	for r := range repos {
-		go func(r repo) {
-			defer wg.Done()
-			if err := dl(r); err == nil {
-				atomic.AddUint64(successful, 1)
-			} else {
-				log.Println(r.name, err)
-			}
-		}(r)
+type dl struct {
+	git   string
+	name  string
+	owner string
+}
+
+func consumeDls(in <-chan dl, wg *sync.WaitGroup) {
+	for dl := range in {
+		go download(dl, wg)
 		time.Sleep(sleep)
 	}
 }
 
-func dl(r repo) error {
+func download(in dl, wg *sync.WaitGroup) {
+	defer wg.Done()
 	ctx := context.Background()
 
 	if timeout != 0 {
@@ -34,24 +53,30 @@ func dl(r repo) error {
 		defer cancel()
 	}
 
-	args := []string{"-C", filepath.Join(base, r.user), "clone", "-q",
+	args := []string{"-C", filepath.Join(base, in.owner), "clone", "-q",
 		"--no-hardlinks"}
 
 	if submodules {
 		args = append(args, "--recurse-submodules", "-j", "16")
 	}
 
-	args = append(args, r.git)
+	args = append(args, in.git)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	if _, err := cmd.Output(); err != nil {
-		_ = os.RemoveAll(filepath.Join(base, r.name))
+		_ = os.RemoveAll(filepath.Join(base, in.name))
 		if ctx.Err() == context.DeadlineExceeded {
-			return ctx.Err()
+			err = ctx.Err()
 		}
-		return err
+		errs <- errors.New(in.name + ": " + err.Error())
+		return
 	}
 
-	return nil
+	msgs <- msg{
+		s: fmt.Sprintf("downloaded repo %s", in.name),
+		v: true,
+	}
+
+	atomic.AddUint64(&successful, 1)
 }

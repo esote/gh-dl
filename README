@@ -2,12 +2,17 @@ gh-dl is a GitHub archiving client. It takes a list of names, which may be
 users, organizations, or repositories, to create a compressed archive of the
 result.
 
-./gh-gl [-s] [-l level] [-t duration] name...
+./gh-gl [-qsv] [-l level] [-t duration] name...
 
 The -l option specifies the gzip compression level -2 <= l <= 9. -2 for Huffman
 coding, -1 for a reasonable default level, otherwise 0 (none) <= l <= 9 (best).
-The -t option specifies the timeout when cloning the git repo. The -s option
-specifies to recursively clone submodules.
+
+The -t option specifies the timeout when cloning the git repo.
+
+The -s option specifies to recursively clone submodules.
+
+The -q option specifies to print nothing but fatal errors. The -v option prints
+more things, such as download progress and rate limit counts.
 
 If the client is interrupted, it will leave a folder in the /tmp directory.
 
@@ -15,13 +20,11 @@ Example execution on the "esote" user, the "git" organization, and the
 "golang/lint" repository, with a 30s timeout (meaning large repos are skipped).
 
 	$ gh-dl -t 30s esote git golang/lint
-	using the working directory /tmp/gh-dl-560161602
-	found 7 repositories for git
-	found 57 repositories for esote
-	error: esote/bonesbsd context deadline exceeded
-	error: git/git context deadline exceeded
-	error: git/git-scm.com context deadline exceeded
-	error: git/htmldocs context deadline exceeded
+	found 7 repos for git
+	found 57 repos for esote
+	error: esote/bonesbsd: context deadline exceeded
+	error: git/git: context deadline exceeded
+	error: git/git-scm.com: context deadline exceeded
+	error: git/htmldocs: context deadline exceeded
 	downloaded 61/65 repositories
-	archiving...
-	archive created: gh-dl-1576644651.tar.gz
+	archive created: gh-dl-1576690423.tar.gz
