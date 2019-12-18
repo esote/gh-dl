@@ -28,19 +28,47 @@ type user []struct {
 
 func fanQueries(repos chan<- repo, dlWg *sync.WaitGroup, total *uint64, args []string) {
 	var wg sync.WaitGroup
+	var names []string
 
-	f := make(chan found, len(args))
+	u := &url.URL{
+		Scheme: "git",
+		Host:   "github.com",
+	}
+	for _, arg := range args {
+		split := strings.Split(arg, "/")
+		switch len(split) {
+		case 1:
+			names = append(names, arg)
+		case 2:
+			if err := mkdir(split[0]); err != nil {
+				log.Println(err)
+				continue
+			}
+
+			u.Path = arg + ".git"
+			dlWg.Add(1)
+			*total++
+			repos <- repo{
+				git:  u.String(),
+				name: arg,
+				user: split[0],
+			}
+		default:
+			log.Println("argument", arg, "invalid")
+		}
+	}
+
+	f := make(chan found)
 	go printFound(f, total)
 
-	wg.Add(len(args))
-
-	for _, name := range args {
+	wg.Add(len(names))
+	for _, name := range names {
 		go func(name string) {
 			defer wg.Done()
 			count, err := query(name, repos, dlWg)
 
 			if err == nil {
-				f <- found{found: count, name: name}
+				f <- found{count, name}
 			} else {
 				log.Println(err)
 			}
@@ -54,7 +82,7 @@ func fanQueries(repos chan<- repo, dlWg *sync.WaitGroup, total *uint64, args []s
 }
 
 func query(name string, repos chan<- repo, wg *sync.WaitGroup) (uint64, error) {
-	if err := os.Mkdir(filepath.Join(base, name), 0700); err != nil {
+	if err := mkdir(name); err != nil {
 		return 0, err
 	}
 
@@ -179,4 +207,14 @@ func pageCount(str string) (int, bool) {
 	}
 
 	return 0, false
+}
+
+func mkdir(name string) error {
+	err := os.Mkdir(filepath.Join(base, name), 0700)
+
+	if err == nil || os.IsExist(err) {
+		return nil
+	}
+
+	return err
 }

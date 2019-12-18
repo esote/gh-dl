@@ -1,35 +1,27 @@
-gh-dl is a client to download all public GitHub repositories from users and/or
-organizations to create a compressed archive of the result.
+gh-dl is a GitHub archiving client. It takes a list of names, which may be
+users, organizations, or repositories, to create a compressed archive of the
+result.
 
-./gh-gl [-s] [-l level] [-t duration] user...
+./gh-gl [-s] [-l level] [-t duration] name...
 
 The -l option specifies the gzip compression level -2 <= l <= 9. -2 for Huffman
 coding, -1 for a reasonable default level, otherwise 0 (none) <= l <= 9 (best).
 The -t option specifies the timeout when cloning the git repo. The -s option
-specifies to recursively clone submodules (with 16 parallel jobs).
+specifies to recursively clone submodules.
 
-If the downloads are interrupted, it will leave a folder in the /tmp directory.
+If the client is interrupted, it will leave a folder in the /tmp directory.
 
-Example execution on the users "esote", "git", and "torvalds" with a 1s
-timeout (meaning large repos are skipped).
+Example execution on the "esote" user, the "git" organization, and the
+"golang/lint" repository, with a 30s timeout (meaning large repos are skipped).
 
-	$ gh-dl -t 1s esote git torvalds
-	using the working directory /tmp/gh-dl-441140771
+	$ gh-dl -t 30s esote git golang/lint
+	using the working directory /tmp/gh-dl-560161602
 	found 7 repositories for git
-	found 6 repositories for torvalds
 	found 57 repositories for esote
-	fail: esote/bonesbsd context deadline exceeded
-	fail: esote/ct context deadline exceeded
-	fail: git/git context deadline exceeded
-	fail: git/git-scm.com context deadline exceeded
-	fail: git/git.github.io context deadline exceeded
-	fail: git/gitscm-old context deadline exceeded
-	fail: git/htmldocs context deadline exceeded
-	fail: git/sha1collisiondetection context deadline exceeded
-	fail: torvalds/libdc-for-dirk context deadline exceeded
-	fail: torvalds/linux context deadline exceeded
-	fail: torvalds/subsurface-for-dirk context deadline exceeded
-	fail: esote/website context deadline exceeded
-	downloaded 58/70 repositories
+	error: esote/bonesbsd context deadline exceeded
+	error: git/git context deadline exceeded
+	error: git/git-scm.com context deadline exceeded
+	error: git/htmldocs context deadline exceeded
+	downloaded 61/65 repositories
 	archiving...
-	archive created: gh-dl-1576529071.tar.gz
+	archive created: gh-dl-1576644651.tar.gz

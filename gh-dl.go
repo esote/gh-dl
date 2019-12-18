@@ -46,15 +46,6 @@ var (
 	submodules bool
 )
 
-func usage() {
-	fmt.Println(`Usage of gh-dl:
-  -l int
-        gzip compression level
-  -s	recursively fetch submodules
-  -t duration
-        git clone timeout duration, "0s" for none (default 10m0s)`)
-}
-
 func main() {
 	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
 
@@ -67,11 +58,10 @@ func main() {
 		`git clone timeout duration, "0s" for none`)
 	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
 
-	flag.Usage = usage
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		log.Fatal("no username specified")
+		log.Fatal("no names specified")
 	}
 
 	var err error
@@ -102,17 +92,15 @@ func main() {
 	if successful == 0 {
 		err = errors.New("no repositories downloaded")
 		goto done
-	} else {
-		fmt.Printf("downloaded %d/%d repositories\n", successful, total)
 	}
 
+	fmt.Printf("downloaded %d/%d repositories\n", successful, total)
 	fmt.Println("archiving...")
 
-	if err = archive(name); err != nil {
-		goto done
+	if err = archive(name); err == nil {
+		fmt.Println("archive created:", name)
 	}
 
-	fmt.Println("archive created:", name)
 done:
 	if err2 := os.RemoveAll(base); err2 != nil && err == nil {
 		err = err2
