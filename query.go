@@ -73,42 +73,47 @@ func fanQueries(args []string, out chan<- query, wg *sync.WaitGroup) {
 }
 
 func consumeQueries(in <-chan query, out chan<- dl, wg *sync.WaitGroup) {
-	for q := range in {
-		go func(q query) {
-			if err := mkdir(q.owner); err != nil {
-				errs <- err
-				wg.Done()
-				return
-			}
-
-			switch q.kind {
-			case queryRepo:
-				msgs <- msg{
-					s: fmt.Sprintf("added individual repo %s", q.name),
-					v: true,
-				}
-				git := &url.URL{
-					Scheme: "git",
-					Host:   "github.com",
-					Path:   q.name + ".git",
-				}
-
-				atomic.AddUint64(&total, 1)
-				out <- dl{
-					git:   git.String(),
-					name:  q.name,
-					owner: q.owner,
-				}
-			case queryUser:
-				go discoverRepos(q, out, wg)
-			}
-		}(q)
+	for query := range in {
+		go queryOwner(query, out, wg)
 		time.Sleep(sleep)
+	}
+}
+
+func queryOwner(in query, out chan<- dl, wg *sync.WaitGroup) {
+	if err := mkdir(in.owner); err != nil {
+		errs <- err
+		wg.Done()
+		return
+	}
+
+	switch in.kind {
+	case queryRepo:
+		msgs <- msg{
+			s: fmt.Sprintf("added individual repo %s", in.name),
+			v: true,
+		}
+
+		git := &url.URL{
+			Scheme: "git",
+			Host:   "github.com",
+			Path:   in.name + ".git",
+		}
+
+		atomic.AddUint64(&total, 1)
+
+		out <- dl{
+			git:   git.String(),
+			name:  in.name,
+			owner: in.owner,
+		}
+	case queryUser:
+		go discoverRepos(in, out, wg)
 	}
 }
 
 func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 	defer wg.Done()
+
 	api, err := url.Parse("https://api.github.com")
 
 	if err != nil {
@@ -119,7 +124,7 @@ func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 	api.Path = filepath.Join("users", in.owner, "repos")
 
 	v := url.Values{}
-	v.Add("page_size", "100")
+	v.Add("per_page", "100")
 
 	var count int
 
@@ -156,6 +161,7 @@ func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 		s: fmt.Sprintf("found %d repos for %s", count, in.owner),
 		v: false,
 	}
+
 	atomic.AddUint64(&total, uint64(count))
 }
 
