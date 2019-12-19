@@ -29,6 +29,11 @@ import (
 	"time"
 )
 
+type msg struct {
+	s string
+	v bool
+}
+
 const (
 	sleep = 250 * time.Millisecond
 )
@@ -47,15 +52,11 @@ var (
 	// Stat counters
 	successful uint64
 	total      uint64
+
+	// Output streams
+	msgs chan msg
+	errs chan error
 )
-
-type msg struct {
-	s string
-	v bool
-}
-
-var msgs chan msg
-var errs chan error
 
 func main() {
 	start := time.Now()
