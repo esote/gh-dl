@@ -2,7 +2,7 @@ gh-dl is a GitHub archiving client. It takes a list of names, which may be
 users, organizations, or repositories, to create a compressed archive of the
 result.
 
-./gh-gl [-qsv] [-l level] [-t duration] name...
+./gh-gl [-qsv] [-l level] [-t duration] [-x repos] name...
 
 The -l option specifies the gzip compression level -2 <= l <= 9. -2 for Huffman
 coding, -1 for a reasonable default level, otherwise 0 (none) <= l <= 9 (best).
@@ -13,6 +13,8 @@ The -s option specifies to recursively clone submodules.
 
 The -q option specifies to print nothing but fatal errors. The -v option prints
 more things, such as download progress and rate limit counts.
+
+The -x option specifies a comma-separated list of repositories to exclude.
 
 If the client is interrupted, it will leave a folder in the /tmp directory.
 
