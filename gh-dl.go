@@ -20,6 +20,7 @@ package main
 
 import (
 	"compress/gzip"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -65,7 +66,7 @@ var (
 )
 
 func main() {
-	start := time.Now()
+	name := fmt.Sprintf("gh-dl-%d.tar.gz", time.Now().UTC().Unix())
 
 	log.SetFlags(0)
 	log.SetPrefix("error: ")
@@ -162,20 +163,24 @@ func main() {
 		v: false,
 	}
 
+	if successful == 0 {
+		err = errors.New("failed to download any repos")
+		goto out
+	}
+
 	msgs <- msg{
 		s: "archiving...",
 		v: true,
 	}
 
-	name := fmt.Sprintf("gh-dl-%d.tar.gz", start.UTC().Unix())
-
-	if err = archive(name); err == nil && !quiet {
+	if err = archive(name); err == nil {
 		msgs <- msg{
 			s: fmt.Sprintf("archive created: %s", name),
 			v: false,
 		}
 	}
 
+out:
 	if err2 := os.RemoveAll(base); err2 != nil && err == nil {
 		err = err2
 	}
