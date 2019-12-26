@@ -69,7 +69,7 @@ func download(in dl, wg *sync.WaitGroup) {
 		if ctx.Err() == context.DeadlineExceeded {
 			err = ctx.Err()
 		}
-		errs <- errors.New(in.name + ": " + err.Error())
+		msgs <- errors.New(in.name + ": " + err.Error())
 		return
 	}
 

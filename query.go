@@ -50,28 +50,6 @@ type repo struct {
 	GitURL string `json:"git_url"`
 }
 
-func fanQueries(args []string, out chan<- query, wg *sync.WaitGroup) {
-	for _, arg := range args {
-		split := strings.Split(arg, "/")
-		switch len(split) {
-		case 1:
-			out <- query{
-				kind:  queryUser,
-				owner: arg,
-			}
-		case 2:
-			out <- query{
-				kind:  queryRepo,
-				name:  arg,
-				owner: split[0],
-			}
-		default:
-			errs <- fmt.Errorf("arg %s invalid", arg)
-			wg.Done()
-		}
-	}
-}
-
 func consumeQueries(in <-chan query, out chan<- dl, wg *sync.WaitGroup) {
 	for query := range in {
 		go queryOwner(query, out, wg)
@@ -81,7 +59,7 @@ func consumeQueries(in <-chan query, out chan<- dl, wg *sync.WaitGroup) {
 
 func queryOwner(in query, out chan<- dl, wg *sync.WaitGroup) {
 	if err := mkdir(in.owner); err != nil {
-		errs <- err
+		msgs <- err
 		wg.Done()
 		return
 	}
@@ -117,7 +95,7 @@ func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 	api, err := url.Parse("https://api.github.com")
 
 	if err != nil {
-		errs <- err
+		msgs <- err
 		return
 	}
 
@@ -135,7 +113,7 @@ func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 		repos, err := requestRepos(api.String(), &pages)
 
 		if err != nil {
-			errs <- err
+			msgs <- err
 			return
 		}
 

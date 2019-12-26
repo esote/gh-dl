@@ -1,3 +1,6 @@
 TODO:
 	Allow authentication to fetch private repos and utilize a larger rate
 	limit quota.
+
+	Allow excluding individual repositories (as an alternative way to skip
+	repos without reguard for timeout).

@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,9 +54,8 @@ var (
 	successful uint64
 	total      uint64
 
-	// Output streams
-	msgs chan msg
-	errs chan error
+	// Output stream
+	msgs chan interface{}
 )
 
 func main() {
@@ -93,52 +93,76 @@ func main() {
 		fmt.Println("working directory", base)
 	}
 
-	errs = make(chan error)
-	go func(errs <-chan error) {
-		for err := range errs {
-			if !quiet {
-				log.Println(err)
-			}
-		}
-	}(errs)
+	msgs = make(chan interface{})
+	defer close(msgs)
 
-	msgs = make(chan msg)
-	go func(msgs <-chan msg) {
+	go func() {
 		for m := range msgs {
-			if !quiet && (!m.v || (m.v && verbose)) {
-				fmt.Println(m.s)
+			if quiet {
+				continue
+			}
+
+			switch m := m.(type) {
+			case msg:
+				if !m.v || verbose {
+					fmt.Println(m.s)
+				}
+			case error:
+				log.Println(m)
 			}
 		}
-	}(msgs)
+	}()
 
 	queries := make(chan query, flag.NArg())
 	dls := make(chan dl, 100)
 
 	var wg sync.WaitGroup
-	wg.Add(flag.NArg())
 
 	go consumeQueries(queries, dls, &wg)
-	go fanQueries(flag.Args(), queries, &wg)
 	go consumeDls(dls, &wg)
+
+	wg.Add(flag.NArg())
+	for _, arg := range flag.Args() {
+		split := strings.Split(arg, "/")
+		switch len(split) {
+		case 1:
+			queries <- query{
+				kind:  queryUser,
+				owner: arg,
+			}
+		case 2:
+			queries <- query{
+				kind:  queryRepo,
+				name:  arg,
+				owner: split[0],
+			}
+		default:
+			msgs <- fmt.Errorf("arg %s invalid", arg)
+			wg.Done()
+		}
+	}
 
 	wg.Wait()
 	close(queries)
 	close(dls)
-	close(errs)
-	close(msgs)
 
-	if !quiet {
-		fmt.Printf("downloaded %d/%d repositories\n", successful, total)
+	msgs <- msg{
+		s: fmt.Sprintf("downloaded %d/%d repos", successful, total),
+		v: false,
 	}
 
-	if verbose {
-		fmt.Println("archiving...")
+	msgs <- msg{
+		s: "archiving...",
+		v: true,
 	}
 
 	name := fmt.Sprintf("gh-dl-%d.tar.gz", start.UTC().Unix())
 
 	if err = archive(name); err == nil && !quiet {
-		fmt.Println("archive created:", name)
+		msgs <- msg{
+			s: fmt.Sprintf("archive created: %s", name),
+			v: false,
+		}
 	}
 
 	if err2 := os.RemoveAll(base); err2 != nil && err == nil {
