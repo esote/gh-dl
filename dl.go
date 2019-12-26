@@ -38,6 +38,15 @@ type dl struct {
 
 func consumeDls(in <-chan dl, wg *sync.WaitGroup) {
 	for dl := range in {
+		if excluded[dl.name] {
+			msgs <- msg{
+				s: fmt.Sprintf("skipped %s", dl.name),
+				v: true,
+			}
+			wg.Done()
+			continue
+		}
+
 		go download(dl, wg)
 		time.Sleep(sleep)
 	}

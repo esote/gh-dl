@@ -36,7 +36,9 @@ type msg struct {
 }
 
 const (
-	sleep = 250 * time.Millisecond
+	defaultTimeout = 10 * time.Minute
+	dlBacklog      = 100
+	sleep          = 250 * time.Millisecond
 )
 
 var (
@@ -49,6 +51,10 @@ var (
 	submodules bool
 	timeout    time.Duration
 	verbose    bool
+	exclude    string
+
+	// Excluded repos
+	excluded map[string]bool = make(map[string]bool)
 
 	// Stat counters
 	successful uint64
@@ -68,9 +74,11 @@ func main() {
 		"gzip compression level")
 	flag.BoolVar(&quiet, "q", false, "quiet except for fatal errors")
 	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
-	flag.DurationVar(&timeout, "t", 10*time.Minute,
+	flag.DurationVar(&timeout, "t", defaultTimeout,
 		`git clone timeout duration, "0s" for none`)
 	flag.BoolVar(&verbose, "v", false, "print more details")
+	flag.StringVar(&exclude, "x", "",
+		"exclude comma-separated list of repos")
 
 	flag.Parse()
 
@@ -83,14 +91,17 @@ func main() {
 	}
 
 	var err error
-	base, err = ioutil.TempDir("", "gh-dl-")
-
-	if err != nil {
+	if base, err = ioutil.TempDir("", "gh-dl-"); err != nil {
 		log.Fatal(err)
 	}
 
 	if verbose {
 		fmt.Println("working directory", base)
+	}
+
+	ex := strings.Split(exclude, ",")
+	for _, x := range ex {
+		excluded[x] = true
 	}
 
 	msgs = make(chan interface{})
@@ -114,7 +125,7 @@ func main() {
 	}()
 
 	queries := make(chan query, flag.NArg())
-	dls := make(chan dl, 100)
+	dls := make(chan dl, dlBacklog)
 
 	var wg sync.WaitGroup
 
