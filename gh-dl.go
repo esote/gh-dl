@@ -39,7 +39,8 @@ type msg struct {
 const (
 	defaultTimeout = 10 * time.Minute
 	dlBacklog      = 100
-	sleep          = 250 * time.Millisecond
+	sleep          = time.Second
+	workers        = 10
 )
 
 var (
@@ -130,8 +131,10 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	go consumeQueries(queries, dls, &wg)
-	go consumeDls(dls, &wg)
+	for i := 0; i < workers; i++ {
+		go consumeQueries(queries, dls, &wg)
+		go consumeDls(dls, &wg)
+	}
 
 	wg.Add(flag.NArg())
 	for _, arg := range flag.Args() {
