@@ -31,28 +31,31 @@ import (
 )
 
 type dl struct {
-	git   string
-	name  string
-	owner string
+	git string
+	ssh string
+
+	fullname string
+	owner    string
+	private  bool
 }
 
-func consumeDls(in <-chan dl, wg *sync.WaitGroup) {
+func consumeDls(base string, in <-chan dl, wg *sync.WaitGroup) {
 	for dl := range in {
-		if excluded[dl.name] {
+		if excluded[dl.fullname] {
 			msgs <- msg{
-				s: fmt.Sprintf("skipped %s", dl.name),
+				s: fmt.Sprintf("skipped %s", dl.fullname),
 				v: true,
 			}
 			wg.Done()
 			continue
 		}
 
-		go download(dl, wg)
+		go download(base, dl, wg)
 		time.Sleep(sleep)
 	}
 }
 
-func download(in dl, wg *sync.WaitGroup) {
+func download(base string, in dl, wg *sync.WaitGroup) {
 	defer wg.Done()
 	ctx := context.Background()
 
@@ -69,21 +72,25 @@ func download(in dl, wg *sync.WaitGroup) {
 		args = append(args, "--recurse-submodules", "-j", "16")
 	}
 
-	args = append(args, in.git)
+	if in.private {
+		args = append(args, in.ssh)
+	} else {
+		args = append(args, in.git)
+	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	if _, err := cmd.Output(); err != nil {
-		_ = os.RemoveAll(filepath.Join(base, in.name))
+		_ = os.RemoveAll(filepath.Join(base, in.fullname))
 		if ctx.Err() == context.DeadlineExceeded {
 			err = ctx.Err()
 		}
-		msgs <- errors.New(in.name + ": " + err.Error())
+		msgs <- errors.New(in.fullname + ": " + err.Error())
 		return
 	}
 
 	msgs <- msg{
-		s: fmt.Sprintf("downloaded repo %s", in.name),
+		s: fmt.Sprintf("downloaded repo %s", in.fullname),
 		v: true,
 	}
 

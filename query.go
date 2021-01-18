@@ -19,19 +19,16 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
+	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"net/url"
+	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/go-github/github"
 )
 
 const (
@@ -41,24 +38,19 @@ const (
 
 type query struct {
 	kind  int
-	name  string
 	owner string
+	repo  string
 }
 
-type repo struct {
-	Name   string `json:"full_name"`
-	GitURL string `json:"git_url"`
-}
-
-func consumeQueries(in <-chan query, out chan<- dl, wg *sync.WaitGroup) {
+func consumeQueries(client *github.Client, base string, in <-chan query, out chan<- dl, wg *sync.WaitGroup) {
 	for query := range in {
-		go queryOwner(query, out, wg)
+		go queryOwner(client, base, query, out, wg)
 		time.Sleep(sleep)
 	}
 }
 
-func queryOwner(in query, out chan<- dl, wg *sync.WaitGroup) {
-	if err := mkdir(in.owner); err != nil {
+func queryOwner(client *github.Client, base string, in query, out chan<- dl, wg *sync.WaitGroup) {
+	if err := mkdir(base, in.owner); err != nil {
 		msgs <- err
 		wg.Done()
 		return
@@ -66,72 +58,58 @@ func queryOwner(in query, out chan<- dl, wg *sync.WaitGroup) {
 
 	switch in.kind {
 	case queryRepo:
-		msgs <- msg{
-			s: fmt.Sprintf("added individual repo %s", in.name),
-			v: true,
-		}
-
-		git := &url.URL{
-			Scheme: "git",
-			Host:   "github.com",
-			Path:   in.name + ".git",
-		}
-
-		atomic.AddUint64(&total, 1)
-
-		out <- dl{
-			git:   git.String(),
-			name:  in.name,
-			owner: in.owner,
-		}
-	case queryUser:
-		go discoverRepos(in, out, wg)
-	}
-}
-
-func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	api, err := url.Parse("https://api.github.com")
-
-	if err != nil {
-		msgs <- err
-		return
-	}
-
-	api.Path = filepath.Join("users", in.owner, "repos")
-
-	v := url.Values{}
-	v.Add("per_page", "100")
-
-	var count int
-
-	for page, pages := 1, 1; page <= pages; page++ {
-		v.Set("page", strconv.Itoa(page))
-		api.RawQuery = v.Encode()
-
-		repos, err := requestRepos(api.String(), &pages)
-
+		repo, _, err := client.Repositories.Get(context.Background(), in.owner, in.repo)
 		if err != nil {
 			msgs <- err
 			return
 		}
-
-		if len(repos) == 0 {
-			break
+		out <- dl{
+			git:      *repo.GitURL,
+			ssh:      *repo.SSHURL,
+			fullname: *repo.FullName,
+			owner:    in.owner,
+			private:  *repo.Private,
 		}
 
-		count += len(repos)
-		wg.Add(len(repos))
+		msgs <- msg{
+			s: fmt.Sprintf("added individual repo %s", *repo.FullName),
+			v: true,
+		}
+		atomic.AddUint64(&total, 1)
+	case queryUser:
+		go discoverRepos(client, in, out, wg)
+	}
+}
 
-		for _, r := range repos {
+func discoverRepos(client *github.Client, in query, out chan<- dl, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	ctx := context.Background()
+	opt := &github.SearchOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+	query := fmt.Sprintf(`user:"%s"`, in.owner)
+	var count uint64
+	for {
+		result, resp, err := client.Search.Repositories(ctx, query, opt)
+		if err != nil {
+			log.Fatal(err)
+		}
+		count += uint64(len(result.Repositories))
+		wg.Add(len(result.Repositories))
+		for _, r := range result.Repositories {
 			out <- dl{
-				git:   r.GitURL,
-				name:  r.Name,
-				owner: in.owner,
+				git:      *r.GitURL,
+				ssh:      *r.SSHURL,
+				fullname: *r.FullName,
+				owner:    in.owner,
+				private:  *r.Private,
 			}
 		}
-
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
 		time.Sleep(sleep)
 	}
 
@@ -139,98 +117,13 @@ func discoverRepos(in query, out chan<- dl, wg *sync.WaitGroup) {
 		s: fmt.Sprintf("found %d repos for %s", count, in.owner),
 		v: false,
 	}
-
-	atomic.AddUint64(&total, uint64(count))
+	atomic.AddUint64(&total, count)
 }
 
-func requestRepos(url string, pages *int) (repos []repo, err error) {
-	resp, err := http.Get(url)
-
-	if err != nil {
-		return
-	}
-
-	if err = checkRateLimit(resp.Header); err != nil {
-		return
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-
-	if err != nil {
-		return
-	}
-
-	defer resp.Body.Close()
-
-	if err = json.Unmarshal(body, &repos); err != nil {
-		return
-	}
-
-	if n := checkPageCount(resp.Header.Get("Link")); n != -1 {
-		*pages = n
-	}
-
-	return
-}
-
-func checkRateLimit(hdrs http.Header) error {
-	if rem := hdrs.Get("X-RateLimit-Remaining"); rem != "0" {
-		msgs <- msg{
-			s: fmt.Sprintf("rate limit remaining: %s", rem),
-			v: true,
-		}
-		return nil
-	}
-
-	reset, err := strconv.ParseInt(hdrs.Get("X-RateLimit-Remaining"), 10, 64)
-
-	if err != nil {
-		return errors.New("rate limit exceeded")
-	}
-
-	return fmt.Errorf("rate limit exceeded, will reset %s",
-		time.Unix(reset, 0).String())
-}
-
-func checkPageCount(link string) int {
-	links := strings.Split(link, ", ")
-
-	if len(links) == 0 {
-		return -1
-	}
-
-	// "last" reference is usually at the end so traverse in reverse
-	for i := len(links) - 1; i > 0; i-- {
-		parts := strings.Split(links[i], "; ")
-
-		if len(parts) != 2 || len(parts[0]) < 2 || parts[1] != `rel="last"` {
-			continue
-		}
-
-		u, err := url.Parse(parts[0][1 : len(parts[0])-2])
-
-		if err != nil {
-			return -1
-		}
-
-		n, err := strconv.Atoi(u.Query().Get("page"))
-
-		if err != nil {
-			return -1
-		}
-
-		return n
-	}
-
-	return -1
-}
-
-func mkdir(name string) error {
+func mkdir(base, name string) error {
 	err := os.Mkdir(filepath.Join(base, name), 0700)
-
 	if err == nil || os.IsExist(err) {
 		return nil
 	}
-
 	return err
 }

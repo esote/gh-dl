@@ -20,6 +20,7 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,7 +29,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/google/go-github/github"
+	"golang.org/x/oauth2"
+	"golang.org/x/term"
 )
 
 type msg struct {
@@ -44,10 +50,8 @@ const (
 )
 
 var (
-	// Base working directory.
-	base string
-
 	// Flags
+	auth       bool
 	level      int
 	quiet      bool
 	submodules bool
@@ -55,8 +59,11 @@ var (
 	verbose    bool
 	exclude    string
 
+	// Authentication token
+	password string
+
 	// Excluded repos
-	excluded map[string]bool = make(map[string]bool)
+	excluded map[string]bool
 
 	// Stat counters
 	successful uint64
@@ -72,16 +79,15 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("error: ")
 
-	flag.IntVar(&level, "l", gzip.DefaultCompression,
-		"gzip compression level")
+	flag.BoolVar(&auth, "a", false,
+		`enter personal authentication token (uses ssh for cloning private repos)`)
+	flag.IntVar(&level, "l", gzip.DefaultCompression, "gzip compression level")
 	flag.BoolVar(&quiet, "q", false, "quiet except for fatal errors")
 	flag.BoolVar(&submodules, "s", false, "recursively fetch submodules")
 	flag.DurationVar(&timeout, "t", defaultTimeout,
 		`git clone timeout duration, "0s" for none`)
 	flag.BoolVar(&verbose, "v", false, "print more details")
-	flag.StringVar(&exclude, "x", "",
-		"exclude comma-separated list of repos")
-
+	flag.StringVar(&exclude, "x", "", "exclude comma-separated list of repos")
 	flag.Parse()
 
 	if quiet && verbose {
@@ -92,8 +98,8 @@ func main() {
 		log.Fatal("no names specified")
 	}
 
-	var err error
-	if base, err = ioutil.TempDir("", "gh-dl-"); err != nil {
+	base, err := ioutil.TempDir("", "gh-dl-")
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -101,6 +107,7 @@ func main() {
 		fmt.Println("working directory", base)
 	}
 
+	excluded = make(map[string]bool)
 	ex := strings.Split(exclude, ",")
 	for _, x := range ex {
 		excluded[x] = true
@@ -126,14 +133,31 @@ func main() {
 		}
 	}()
 
+	var client *github.Client
+	if auth {
+		fmt.Print("Personal access token: ")
+		bytepass, err := term.ReadPassword(int(syscall.Stdin))
+		if err != nil {
+			log.Fatal(err)
+		}
+		password = string(bytepass)
+		fmt.Println()
+		ctx := context.Background()
+		oauth := oauth2.NewClient(ctx, oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: password,
+		}))
+		client = github.NewClient(oauth)
+	} else {
+		client = github.NewClient(nil)
+	}
+	client.UserAgent = "gh-dl"
+
 	queries := make(chan query, flag.NArg())
 	dls := make(chan dl, dlBacklog)
-
 	var wg sync.WaitGroup
-
 	for i := 0; i < workers; i++ {
-		go consumeQueries(queries, dls, &wg)
-		go consumeDls(dls, &wg)
+		go consumeQueries(client, base, queries, dls, &wg)
+		go consumeDls(base, dls, &wg)
 	}
 
 	wg.Add(flag.NArg())
@@ -148,8 +172,8 @@ func main() {
 		case 2:
 			queries <- query{
 				kind:  queryRepo,
-				name:  arg,
 				owner: split[0],
+				repo:  split[1],
 			}
 		default:
 			msgs <- fmt.Errorf("arg %s invalid", arg)
@@ -176,7 +200,7 @@ func main() {
 		v: true,
 	}
 
-	if err = archive(name); err == nil {
+	if err = archive(base, name); err == nil {
 		msgs <- msg{
 			s: fmt.Sprintf("archive created: %s", name),
 			v: false,
@@ -191,5 +215,4 @@ out:
 	if err != nil {
 		log.Fatal(err)
 	}
-
 }

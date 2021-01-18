@@ -23,12 +23,11 @@ import (
 	"compress/gzip"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 )
 
-func archive(name string) error {
+func archive(base, name string) error {
 	final, err := os.Create(name)
 
 	if err != nil {
@@ -46,8 +45,9 @@ func archive(name string) error {
 	var g *gzip.Writer
 
 	if g, err = gzip.NewWriterLevel(final, level); err != nil {
-		if !quiet {
-			log.Println("gzip level invalid, using default")
+		msgs <- msg{
+			s: "gzip level invalid, using default",
+			v: true,
 		}
 		g = gzip.NewWriter(final)
 	}
@@ -62,7 +62,7 @@ func archive(name string) error {
 	}
 
 	for _, info := range files {
-		if err = insert(t, info); err != nil {
+		if err = insert(base, t, info); err != nil {
 			return err
 		}
 	}
@@ -70,7 +70,7 @@ func archive(name string) error {
 	return nil
 }
 
-func insert(t *tar.Writer, info os.FileInfo) error {
+func insert(base string, t *tar.Writer, info os.FileInfo) error {
 	full := filepath.Join(base, info.Name())
 	cloned, err := ioutil.ReadDir(full)
 
